@@ -1,3 +1,5 @@
+import json
+import logging
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -28,6 +30,11 @@ app.add_middleware(
 )
 chat_store = {}
 
+
+class Evidence(BaseModel):
+    toolName: str
+    output: str
+    
 #add_pydantic_ai_route(app, agent, "/api/chat")
 class ChatWithHistory(dspy.Signature):
     history = dspy.InputField(desc="Conversation so far")
@@ -35,16 +42,38 @@ class ChatWithHistory(dspy.Signature):
     answer = dspy.OutputField()
 
 
-chat_model = dspy.ChainOfThought(ChatWithHistory)
+def get_courses():
+    return [
+        {
+            "name": "course_1"
+        },
+        {
+            "name": "course_2"
+        }
+    ]
+def get_people_in_courses():
+    return [
+        {
+            "name": "course_1"
+        },
+        {
+            "name": "course_2"
+        }
+    ]
+
+
+    
+chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses])
+
 class ChatRequest(BaseModel):
     session_id: str
     messages: list[dict]
+    tools: list[Evidence] = [] 
     metadata: Optional[dict] = {}
-    tools: Optional[dict] = {}
     trigger: Optional[str] = ""
 
 class ChatResponse(BaseModel):
-    content: str
+    content: list[dict] | str
     role: str
 
 def format_history(messages: list[dict]) -> str:
@@ -71,10 +100,25 @@ def chat(req: ChatRequest):
     )
 
     # Save new messages
+    logging.error(result)
     history.append(req.messages[-1])
     history.append({"role": "assistant", "content": result.answer})
-
-    return {"role": "assistant", "content": result.answer}
+    tools =[
+            {"type": "tool-call", 
+            "toolName":  value,
+            "result": result.trajectory["observation_" + key.replace("tool_name_", "")]
+            }  for (key,value) in result.trajectory.items() if key.startswith("tool_name") and value != 'finish' ]
+    c =[
+            {"type": "text", 
+            "text": result.answer},
+            *tools
+            
+    ]
+    logging.error(c)
+    return {
+        "role": "assistant", 
+        "content": c
+        }
 
 if __name__ == "__main__":
     import uvicorn
