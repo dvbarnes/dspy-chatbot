@@ -34,7 +34,6 @@ import {
   SquareIcon,
 } from "lucide-react";
 import type { FC } from "react";
-import { TooltipProvider } from "../ui/tooltip";
 
 export const Thread: FC = () => {
   return (
@@ -78,7 +77,6 @@ const ThreadMessage: FC = () => {
 const ThreadScrollToBottom: FC = () => {
   return (
     <ThreadPrimitive.ScrollToBottom asChild>
-      <TooltipProvider>
       <TooltipIconButton
         tooltip="Scroll to bottom"
         variant="outline"
@@ -86,7 +84,6 @@ const ThreadScrollToBottom: FC = () => {
       >
         <ArrowDownIcon />
       </TooltipIconButton>
-      </TooltipProvider>
     </ThreadPrimitive.ScrollToBottom>
   );
 };
