@@ -71,7 +71,8 @@ class ThreadTitleSignature(dspy.Signature):
 chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses])
 
 class ChatRequest(BaseModel):
-    session_id: str
+    internal_id: str
+    session_id: Optional[str] = ""
     messages: list[dict]
     tools: list[Evidence] = [] 
     metadata: Optional[dict] = {}
@@ -92,13 +93,55 @@ class TitleResponse(BaseModel):
 
 
 class TitleRequest(BaseModel):
+    id: str
     message_text: list[dict]
 
 
+class ThreadRequest(BaseModel):
+    id: str
+
+
+class ThreadResponse(BaseModel):
+    id: str
+    externalId: str
+    remoteId: str
+    status: str
+    title: str
+
+thread_db = {} # similate a database
+
+@app.post("/thread", response_model=ThreadResponse)
+def create_thread(req: ThreadRequest)->ThreadResponse:
+    thread_db[id] = {
+        "id":req.id,
+        "status": "regular",
+        "remoteId": req.id,
+        "externalId":req.id,
+        "title": "New Chat"
+    }
+    
+    return thread_db[id]
+
+@app.get("/thread", response_model=list[ThreadResponse])
+def get_threads()->list[ThreadResponse]:    
+    return thread_db.values()
+
+@app.get("/thread/{thread_id}", response_model=ThreadResponse)
+def get_threads(thread_id: str)->ThreadResponse:    
+    return thread_db[thread_id]
+
+
+@app.delete("/thread/{thread_id}", response_model=list[ThreadResponse])
+def get_threads(thread_id: str)->list[ThreadResponse]:    
+    thread = thread_db.pop(thread_id)
+    return thread
+
 @app.post("/generate-title", response_model=TitleResponse)
 def generate_title(req: TitleRequest)-> TitleResponse:
+    
     title_summerizer = dspy.Predict(ThreadTitleSignature)
     result = title_summerizer(message=req.message_text)
+    thread_db[id]["title"]= result.get("title")
     return TitleResponse(title=result.get("title"))
 
 @app.post("/chat", response_model=ChatResponse)
@@ -107,7 +150,7 @@ def chat(req: ChatRequest):
     if req.session_id not in chat_store:
         chat_store[req.session_id] = []
 
-    history = chat_store[req.session_id]
+    history = chat_store[req.session_id] # save/load this from the db
 
     # Format history for DSPy
     history_text = format_history(history)
