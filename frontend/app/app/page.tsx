@@ -1,6 +1,7 @@
 "use client";
 
 import { Thread } from "@/components/assistant-ui/thread";
+import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAui, AuiProvider, Suggestions } from "@assistant-ui/react";
 
@@ -30,7 +31,8 @@ function ThreadWithSuggestions() {
 
 export default function Home() {
   return (
-    <main className="h-dvh">
+    <main className="grid h-dvh grid-cols-[200px_1fr] grid-rows-[minmax(0,1fr)] gap-4 p-4">
+      <ThreadList />
       <ThreadWithSuggestions />
     </main>
   );
