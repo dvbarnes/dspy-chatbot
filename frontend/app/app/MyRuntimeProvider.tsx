@@ -1,6 +1,6 @@
 "use client";
 
-import { AuiProvider, ChatModelAdapter, ExportedMessageRepository, RemoteThreadListAdapter, RuntimeAdapterProvider, Suggestions, ThreadHistoryAdapter, ThreadMessageLike, useAui, useCloudThreadListAdapter, useCloudThreadListRuntime, useLocalRuntime, useRemoteThreadListRuntime } from "@assistant-ui/react";
+import { AuiProvider, ChatModelAdapter, ExportedMessageRepository, FeedbackAdapter, RemoteThreadListAdapter, RuntimeAdapterProvider, Suggestions, ThreadHistoryAdapter, ThreadMessageLike, useAui, useCloudThreadListAdapter, useCloudThreadListRuntime, useLocalRuntime, useRemoteThreadListRuntime } from "@assistant-ui/react";
 import { AppendMessage } from "@assistant-ui/react";
 import {
   AssistantRuntimeProvider,
@@ -21,161 +21,208 @@ const threadsStore = new Map<
 
 threadsStore.set("__LOCALID_y0WREqa", {
   remoteId: "__LOCALID_y0WREqa",
-  status: "regular"
+  status: "regular",
+  title: "existing chat"
 })
 
 
-const useLocalHistoryAdapter=  ()=>{
-    const aui = useAui();
+const useLocalHistoryAdapter = () => {
+  const aui = useAui();
   const [adapter] = useState(
     () => {
       return {
-        load: async ()=>{
+        load: async () => {
           console.log('load', aui, aui.threadListItem().getState())
-          const threadId =aui.threadListItem().getState()
-          if(threadId.remoteId == null){
+          const threadId = aui.threadListItem().getState()
+          if (threadId.remoteId == null) {
             return ExportedMessageRepository.fromArray([])
           }
           return ExportedMessageRepository.fromArray([{
-                role: "user",
-                content: "hello from " + aui.threadListItem().getState().remoteId,
-            }])
+            role: "user",
+            content: "hello from " + aui.threadListItem().getState().remoteId,
+          }])
         },
-        append: async (message)=>{
+        append: async (message) => {
           console.log('append', message)
         }
       } as ThreadHistoryAdapter
-      }
+    }
   );
   return adapter;
 }
-const useLocalThreadAdapter = () :RemoteThreadListAdapter=>{
-  return {
-  async list() {
-    return {
-      threads: Array.from(threadsStore.values()).map((thread) => ({
-        remoteId: thread.remoteId,
-        status: thread.status,
-        title: thread.title,
-      })),
-    };
-  },
-
-  async initialize(localId) {
-    console.log('init', localId)
-    const remoteId = localId;
-    threadsStore.set(remoteId, {
-      remoteId,
-      status: "regular",
-    });
-    return { remoteId, externalId: undefined };
-  },
-
-  async rename(remoteId, title) {
-    const thread = threadsStore.get(remoteId);
-    if (thread) {
-      thread.title = title;
+const useFeedbackAdapter = ()=>{
+  const aui = useAui();
+  const [adapter] = useState(
+    () => {
+      return {
+        submit(feedback) {
+          console.log("feedback", feedback)
+        },
+      } as FeedbackAdapter
     }
-  },
-
-  async archive(remoteId) {
-    const thread = threadsStore.get(remoteId);
-    if (thread) {
-      thread.status = "archived";
-    }
-  },
-
-  async unarchive(remoteId) {
-    const thread = threadsStore.get(remoteId);
-    if (thread) {
-      thread.status = "regular";
-    }
-  },
-
-  async delete(remoteId) {
-    threadsStore.delete(remoteId);
-  },
-
-  async fetch(remoteId) {
-    console.log('fetch', remoteId)
-    const thread = threadsStore.get(remoteId);
-    if (!thread) {
-      throw new Error("Thread not found");
-    }
-    return {
-      remoteId: thread.remoteId,
-      status: thread.status,
-      title: thread.title,
-    };
-  },
-
-  async generateTitle(_remoteId, messages) {
-    // Generate a simple title from the first user message
-    console.log("generateTitle", messages)
-    return createAssistantStream(async (controller) => {
-      const firstUserMessage = messages.find((m) => m.role === "user");
-      if (firstUserMessage) {
-        const content = firstUserMessage.content
-          .filter((c) => c.type === "text")
-          .map((c) => c.text)
-          .join(" ");
-        const title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
-        controller.appendText(title);
-      } else {
-        controller.appendText("New Chat");
-      }
-    });
-  },
-  unstable_Provider: useCallback<FC<PropsWithChildren>>(
-    function Provider({ children }) {
-      const history = useLocalHistoryAdapter()
-
-      const adapters = useMemo(
-        () => ({
-          history
-        }),
-        [history],
-      );
-
-      return (
-        <RuntimeAdapterProvider adapters={adapters}>
-          {children}
-        </RuntimeAdapterProvider>
-      );
-    },
-    []
-  )
+  );
+  return adapter;
 }
+const useLocalThreadAdapter = (): RemoteThreadListAdapter => {
+  return {
+    async list() {
+
+        const result = await fetch("http://localhost:8000/thread", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        const data = await result.json();
+        console.log("list", data)
+      return {
+        threads: data,
+      };
+    },
+
+    async initialize(localId) {
+      console.log('init', localId)
+      const remoteId = localId;
+      threadsStore.set(remoteId, {
+        remoteId,
+        status: "regular",
+      });
+        const result = await fetch("http://localhost:8000/thread", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: localId
+            ,
+          }),
+        });
+        const data = await result.json();
+      return { remoteId: data.externalId, externalId: data.externalId };
+    },
+
+    async rename(remoteId, title) {
+      const thread = threadsStore.get(remoteId);
+      if (thread) {
+        thread.title = title;
+      }
+    },
+
+    async archive(remoteId) {
+      console.log("delete thread", remoteId)
+       const result = await fetch(`http://localhost:8000/thread/${remoteId}`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          }
+        });
+        const data = await result.json();
+        return data
+    },
+
+    async unarchive(remoteId) {
+      const thread = threadsStore.get(remoteId);
+      if (thread) {
+        thread.status = "regular";
+      }
+    },
+
+    async delete(remoteId) {
+      console.log("delete thread", remoteId)
+       const result = await fetch(`http://localhost:8000/thread/${remoteId}`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          }
+        });
+        const data = await result.json();
+        return data
+    },
+
+    async fetch(remoteId) {
+       const result = await fetch(`http://localhost:8000/thread/${remoteId}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          }
+        });
+        const data = await result.json();
+        return data
+    },
+
+    async generateTitle(_remoteId, messages) {
+      // Generate a simple title from the first user message
+      console.log("generateTitle", messages)
+      return createAssistantStream(async (controller) => {
+
+        const firstUserMessage = messages.find((m) => m.role === "user");
+        const result = await fetch("http://localhost:8000/generate-title", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: _remoteId,
+            message_text: firstUserMessage?.content
+            ,
+          }),
+        });
+        const data = await result.json();
+        controller.appendText(data.title)
+      })
+    },
+    unstable_Provider: useCallback<FC<PropsWithChildren>>(
+      function Provider({ children }) {
+        const history = useLocalHistoryAdapter()
+        const feedback = useFeedbackAdapter()
+        const adapters = useMemo(
+          () => ({
+            history,
+            feedback
+          }),
+          [history, feedback],
+        );
+
+        return (
+          <RuntimeAdapterProvider adapters={adapters}>
+            {children}
+          </RuntimeAdapterProvider>
+        );
+      },
+      []
+    )
+  }
 };
 
 
-const useLocalModelAdapter = ()=>{
-    const aui = useAui();
+const useLocalModelAdapter = () => {
+  const aui = useAui();
   const [adapter] = useState(
     () => {
 
-const MyModelAdapter: ChatModelAdapter = {
-  
-  async run({ messages, abortSignal, context, runConfig }) {
-    console.log('run', messages, abortSignal, context, runConfig, aui, aui.threadListItem().getState())
-    // TODO replace with your own API
+      const MyModelAdapter: ChatModelAdapter = {
 
-    const result = await fetch("http://localhost:8000/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        session_id: "123",
-        messages,
-      }),
-      signal: abortSignal,
-    });
-    const data = await result.json();
-    return data;
-  },
-};
-return MyModelAdapter
+        async run({ messages, abortSignal, context, runConfig }) {
+          console.log('run', messages, abortSignal, context, runConfig, aui, aui.threadListItem().getState())
+          // TODO replace with your own API
+
+          const result = await fetch("http://localhost:8000/chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              internal_id: aui.threadListItem().getState().id,
+              session_id:aui.threadListItem().getState().externalId,
+              messages,
+            }),
+            signal: abortSignal,
+          });
+          const data = await result.json();
+          return data;
+        },
+      };
+      return MyModelAdapter
     },
   );
   return adapter;
@@ -189,8 +236,8 @@ export function MyRuntimeProvider({
 
 
   const runtime = useRemoteThreadListRuntime({
-    runtimeHook: ()=> useLocalRuntime(useLocalModelAdapter()),
-     adapter: useLocalThreadAdapter()     
+    runtimeHook: () => useLocalRuntime(useLocalModelAdapter()),
+    adapter: useLocalThreadAdapter()
   })
 
   return (

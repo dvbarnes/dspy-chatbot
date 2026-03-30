@@ -32,6 +32,8 @@ import {
   PencilIcon,
   RefreshCwIcon,
   SquareIcon,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 import type { FC } from "react";
 
@@ -246,6 +248,12 @@ const AssistantActionBar: FC = () => {
           </AuiIf>
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
+      <ActionBarPrimitive.FeedbackPositive className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95">
+        <ThumbsUp width={16} height={16} />
+      </ActionBarPrimitive.FeedbackPositive>
+      <ActionBarPrimitive.FeedbackNegative className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95">
+        <ThumbsDown width={16} height={16} />
+      </ActionBarPrimitive.FeedbackNegative>
       <ActionBarPrimitive.Reload asChild>
         <TooltipIconButton tooltip="Refresh">
           <RefreshCwIcon />
