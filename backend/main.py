@@ -35,7 +35,6 @@ class Evidence(BaseModel):
     toolName: str
     output: str
     
-#add_pydantic_ai_route(app, agent, "/api/chat")
 class ChatWithHistory(dspy.Signature):
     history = dspy.InputField(desc="Conversation so far")
     question = dspy.InputField()
@@ -61,8 +60,14 @@ def get_people_in_courses():
         }
     ]
 
+class ThreadTitleSignature(dspy.Signature):
+    """
+    You are a helpful assistant provided with a list of messages and expected to return a summary of this message to be used as the title in a thread
+    for a chat bot. Please limit your response to 50 characters.
+    """
+    message: list[dict] = dspy.InputField()
+    title: str = dspy.OutputField()
 
-    
 chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses])
 
 class ChatRequest(BaseModel):
@@ -81,6 +86,20 @@ def format_history(messages: list[dict]) -> str:
         [f"{m['role']}: {m['content']}" for m in messages]
     )
 
+
+class TitleResponse(BaseModel):
+    title: str
+
+
+class TitleRequest(BaseModel):
+    message_text: list[dict]
+
+
+@app.post("/generate-title", response_model=TitleResponse)
+def generate_title(req: TitleRequest)-> TitleResponse:
+    title_summerizer = dspy.Predict(ThreadTitleSignature)
+    result = title_summerizer(message=req.message_text)
+    return TitleResponse(title=result.get("title"))
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
