@@ -10,6 +10,8 @@ import dspy
 import os
 
 from pydantic import BaseModel
+
+from tools.web_search import search_web
 load_dotenv()
 
 dspy.configure(
@@ -68,7 +70,7 @@ class ThreadTitleSignature(dspy.Signature):
     message: list[dict] = dspy.InputField()
     title: str = dspy.OutputField()
 
-chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses])
+chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses, search_web])
 
 class ChatRequest(BaseModel):
     internal_id: str
@@ -145,7 +147,7 @@ def generate_title(req: TitleRequest)-> TitleResponse:
     return TitleResponse(title=result.get("title"))
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest):
     # Initialize session
     if req.session_id not in chat_store:
         chat_store[req.session_id] = []
@@ -156,7 +158,7 @@ def chat(req: ChatRequest):
     history_text = format_history(history)
 
     # Call model
-    result = chat_model(
+    result = await chat_model.aforward(
         history=history_text,
         question=req.messages[-1]
     )
