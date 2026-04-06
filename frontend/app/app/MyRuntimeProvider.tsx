@@ -1,6 +1,6 @@
 "use client";
 
-import { AuiProvider, ChatModelAdapter, ExportedMessageRepository, FeedbackAdapter, RemoteThreadListAdapter, RuntimeAdapterProvider, Suggestions, ThreadHistoryAdapter, ThreadMessageLike, useAui, useCloudThreadListAdapter, useCloudThreadListRuntime, useLocalRuntime, useRemoteThreadListRuntime } from "@assistant-ui/react";
+import { AuiProvider, ChatModelAdapter, ChatModelRunResult, ExportedMessageRepository, FeedbackAdapter, RemoteThreadListAdapter, RuntimeAdapterProvider, Suggestions, ThreadHistoryAdapter, ThreadMessageLike, useAui, useCloudThreadListAdapter, useCloudThreadListRuntime, useLocalRuntime, useRemoteThreadListRuntime } from "@assistant-ui/react";
 import { AppendMessage } from "@assistant-ui/react";
 import {
   AssistantRuntimeProvider,
@@ -228,6 +228,69 @@ const useLocalModelAdapter = () => {
   return adapter;
 }
 
+
+const useLocalStreamingAdapter = () => {
+  const aui = useAui();
+  const [adapter] = useState(
+    () => {
+
+      const MyModelAdapter: ChatModelAdapter = {
+
+        async *run({ messages, abortSignal, context, runConfig }) {
+          console.log('run', messages, abortSignal, context, runConfig, aui, aui.threadListItem().getState())
+          // TODO replace with your own API
+
+          const response = await fetch("http://localhost:8000/chat-stream", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              internal_id: aui.threadListItem().getState().id,
+              session_id:aui.threadListItem().getState().externalId,
+              messages,
+            }),
+            signal: abortSignal,
+          });
+         const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+
+      for (const part of parts) {
+        if (!part.startsWith("data:")) continue;
+
+        const data = part.replace("data: ", "").trim();
+
+        if (data === "[DONE]") return;
+        console.log(data);
+        yield {
+          content: [{
+            type: "text",
+            text: JSON.parse(data).textDelta ?? "hello",
+            
+          }
+        ],
+        } as ChatModelRunResult;
+      }
+    }
+        },
+      };
+      return MyModelAdapter
+    },
+  );
+  return adapter;
+}
+
 export function MyRuntimeProvider({
   children,
 }: Readonly<{
@@ -236,7 +299,7 @@ export function MyRuntimeProvider({
 
 
   const runtime = useRemoteThreadListRuntime({
-    runtimeHook: () => useLocalRuntime(useLocalModelAdapter()),
+    runtimeHook: () => useLocalRuntime(useLocalStreamingAdapter()),
     adapter: useLocalThreadAdapter()
   })
 

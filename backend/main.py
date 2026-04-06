@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import json
 import logging
 from typing import Optional
@@ -5,12 +6,14 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from dspy.streaming import StatusMessageProvider, StreamListener, StreamResponse, StatusMessage
 import dspy
 import os
 
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from tools.send_message import get_chat_groups, send_message
 from tools.web_search import search_web
 load_dotenv()
 
@@ -70,13 +73,13 @@ class ThreadTitleSignature(dspy.Signature):
     message: list[dict] = dspy.InputField()
     title: str = dspy.OutputField()
 
-chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses, search_web])
+chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses, search_web, send_message, get_chat_groups])
 
 class ChatRequest(BaseModel):
-    internal_id: str
+    #internal_id: str
     session_id: Optional[str] = ""
     messages: list[dict]
-    tools: list[Evidence] = [] 
+    #tools: list[Evidence] = [] 
     metadata: Optional[dict] = {}
     trigger: Optional[str] = ""
 
@@ -146,6 +149,76 @@ def generate_title(req: TitleRequest)-> TitleResponse:
     thread_db[id]["title"]= result.get("title")
     return TitleResponse(title=result.get("title"))
 
+
+dspy_streamer = dspy.streamify(
+    chat_model,
+    stream_listeners=[
+        StreamListener(signature_field_name="reasoning"),
+        StreamListener(signature_field_name="answer"),
+    ],
+    async_streaming=True,
+)
+
+
+async def streaming_response(streamer):
+    """
+    Custom streaming response function that handles StatusMessage objects.
+    This implements the same functionality as dspy_streaming_response but adds handling for StatusMessage objects.
+    """
+    from dspy.primitives.prediction import Prediction
+    import litellm
+    yield f"data: {{ \"type\": \"start\"}}\n\n"
+    
+    async for value in streamer:
+        #yield f"data: {{ \"type\": \"start-step\"}}\n\n"
+        if isinstance(value, StatusMessage):
+            #data = {"status": value.message}
+            
+            #yield f"data: {json.dumps(data)}\n\n"
+            message = value.message
+            print(message)
+            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": \"hello\", \"parts\": []}}\n\n"
+        elif isinstance(value, Prediction):
+            data = {"prediction": {k: v for k, v in value.items(include_dspy=False)}}
+            #yield f"data: {json.dumps(data)}\n\n"
+            logging.error(value["answer"])
+            #yield f"data: {{ \"type\": \"part-start\", \"textDelta\": \"\\n\\n\"}}\n\n"
+            yield f"data: {{ \"type\": \"tool-call\", \"textDelta\": {json.dumps(value["answer"])}}}\n\n"
+        elif isinstance(value, litellm.ModelResponseStream):
+            #data = {"chunk": value.json()}
+            # yield f"data: {json.dumps(data)}\n\n"
+            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": \"hello world\"}}\n\n"
+        elif isinstance(value, StreamResponse):
+            
+            #data = {"chunk": {k: v for k, v in asdict(value).items()}}
+            #yield f"data: {json.dumps(data)}\n\n"
+            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": {json.dumps(asdict(value)["chunk"])}}}\n\n"
+        elif isinstance(value, str) and value.startswith("data:"):
+            yield value
+        else:
+            data = {"unknown": str(value)}
+            yield f"data: {json.dumps(data)}\n\n"
+       # yield f"data: {{ \"type\": \"step-finish\"}}\n\n"
+    yield "data: [DONE]\n\n"
+    
+@app.post("/chat-stream", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    # Initialize session
+    if req.session_id not in chat_store:
+        chat_store[req.session_id] = []
+
+    history = chat_store[req.session_id] # save/load this from the db
+
+    # Format history for DSPy
+    history_text = format_history(history)
+
+    # Call model
+    result = dspy_streamer(
+        history=history_text,
+        question=req.messages[-1]
+    )
+    return StreamingResponse(streaming_response(result), media_type="text/event-stream")
+    
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     # Initialize session

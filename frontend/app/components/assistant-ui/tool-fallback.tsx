@@ -19,6 +19,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { MarkdownText } from "./markdown-text";
 
 const ANIMATION_DURATION = 200;
 
