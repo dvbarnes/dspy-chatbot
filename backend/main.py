@@ -2,6 +2,7 @@ from dataclasses import asdict
 import json
 import logging
 from typing import Optional
+import uuid
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -153,8 +154,9 @@ def generate_title(req: TitleRequest)-> TitleResponse:
 dspy_streamer = dspy.streamify(
     chat_model,
     stream_listeners=[
-        StreamListener(signature_field_name="reasoning"),
         StreamListener(signature_field_name="answer"),
+        StreamListener(signature_field_name="reasoning"),
+        
     ],
     async_streaming=True,
 )
@@ -167,38 +169,75 @@ async def streaming_response(streamer):
     """
     from dspy.primitives.prediction import Prediction
     import litellm
-    yield f"data: {{ \"type\": \"start\"}}\n\n"
+    #yield f"data: {{ \"type\": \"start\"}}\n\n"
+    #yield f"data: {{ \"type\": \"start-step\"}}\n\n"
+    is_text = False
     
     async for value in streamer:
-        #yield f"data: {{ \"type\": \"start-step\"}}\n\n"
         if isinstance(value, StatusMessage):
-            #data = {"status": value.message}
+            data = {"status": value.message}
+            # UIMessageStream.ts
+            d = {}
+            d['type'] = "tool-call-start"
+            d['toolName'] = value.message
+            d['toolCallId'] = str(uuid.uuid4())
+            d["argsText"] = json.dumps(value.__dict__)
             
-            #yield f"data: {json.dumps(data)}\n\n"
+            print(f"{json.dumps(d)}\n\n")
+            
+            d2 = {}
+            d2['type'] = "tool-call-end"
+            
+            # d = {}
+            # d['type'] = "reasoning-delta"
+            # d['delta'] = value.message
+
+            d = {}
+            d['type'] = "start-step"
+            print(f"{json.dumps(d)}\n\n")
+            
+            d2 = {}
+            d2['type'] = "finish-step"
+            d2['finishReason'] = 'reason'
+            d2['usage'] = 'usage'
+            d2['isContinued'] = False
+            
+                
+            yield f"data: {json.dumps(d)}\n\n"
+            yield f"data: {json.dumps(d2)}\n\n"
             message = value.message
             print(message)
-            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": \"hello\", \"parts\": []}}\n\n"
+            
+            #yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": \"{message}\", \"parts\": [{{\"type\": \"tool-call\"}}]}}\n\n"
         elif isinstance(value, Prediction):
             data = {"prediction": {k: v for k, v in value.items(include_dspy=False)}}
             #yield f"data: {json.dumps(data)}\n\n"
             logging.error(value["answer"])
+            
             #yield f"data: {{ \"type\": \"part-start\", \"textDelta\": \"\\n\\n\"}}\n\n"
-            yield f"data: {{ \"type\": \"tool-call\", \"textDelta\": {json.dumps(value["answer"])}}}\n\n"
+            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": {json.dumps(value["answer"])}}}\n\n"
         elif isinstance(value, litellm.ModelResponseStream):
             #data = {"chunk": value.json()}
-            # yield f"data: {json.dumps(data)}\n\n"
-            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": \"hello world\"}}\n\n"
+            yield f"data: {{ \"type\": \"reasoning\", \"textDelta\": \"hello world\"}}\n\n"
         elif isinstance(value, StreamResponse):
-            
+            if value.is_last_chunk:
+                pass
+                #yield f"data: {{ \"type\": \"text-end\"}}\n\n"        
+            elif is_text == False:
+                #yield f"data: {{ \"type\": \"text-start\"}}\n\n"
+                is_text = True
             #data = {"chunk": {k: v for k, v in asdict(value).items()}}
             #yield f"data: {json.dumps(data)}\n\n"
-            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": {json.dumps(asdict(value)["chunk"])}}}\n\n"
+            #yield f"data: {json.dumps(d)}\n\n"
+            yield f"data: {{ \"type\": \"reasoning-delta\", \"delta\": {json.dumps(asdict(value)["chunk"])}}}\n\n"
+            #yield f"data: {json.dumps(d2)}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
             yield value
         else:
             data = {"unknown": str(value)}
             yield f"data: {json.dumps(data)}\n\n"
-       # yield f"data: {{ \"type\": \"step-finish\"}}\n\n"
+        
+    #yield f"data: {{ \"type\": \"step-finish\"}}\n\n"
     yield "data: [DONE]\n\n"
     
 @app.post("/chat-stream", response_model=ChatResponse)
@@ -217,6 +256,7 @@ async def chat(req: ChatRequest):
         history=history_text,
         question=req.messages[-1]
     )
+    
     return StreamingResponse(streaming_response(result), media_type="text/event-stream")
     
 @app.post("/chat", response_model=ChatResponse)
@@ -240,6 +280,7 @@ async def chat(req: ChatRequest):
     logging.error(result)
     history.append(req.messages[-1])
     history.append({"role": "assistant", "content": result.answer})
+    
     tools =[
             {"type": "tool-call", 
             "toolName":  value,
@@ -248,7 +289,12 @@ async def chat(req: ChatRequest):
     c =[
             {"type": "text", 
             "text": result.answer},
-            *tools
+            *tools,
+            {
+                "type": "reasoning",
+                "text":"hello world!!"
+                
+            }
             
     ]
     logging.error(c)

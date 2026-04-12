@@ -1,6 +1,6 @@
 "use client";
 
-import { AuiProvider, ChatModelAdapter, ChatModelRunResult, ExportedMessageRepository, FeedbackAdapter, RemoteThreadListAdapter, RuntimeAdapterProvider, Suggestions, ThreadHistoryAdapter, ThreadMessageLike, useAui, useCloudThreadListAdapter, useCloudThreadListRuntime, useLocalRuntime, useRemoteThreadListRuntime } from "@assistant-ui/react";
+import { AuiProvider, ChatModelAdapter, ChatModelRunResult, ExportedMessageRepository, FeedbackAdapter, RemoteThreadListAdapter, RuntimeAdapterProvider, Suggestions, ThreadAssistantMessagePart, ThreadHistoryAdapter, ThreadMessageLike, useAui, useCloudThreadListAdapter, useCloudThreadListRuntime, useLocalRuntime, useRemoteThreadListRuntime } from "@assistant-ui/react";
 import { AppendMessage } from "@assistant-ui/react";
 import {
   AssistantRuntimeProvider,
@@ -8,6 +8,7 @@ import {
 } from "@assistant-ui/react";
 import { FC, PropsWithChildren, useCallback, useMemo, useState } from "react";
 import { createAssistantStream } from "assistant-stream";
+import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 
 
 const threadsStore = new Map<
@@ -272,14 +273,14 @@ const useLocalStreamingAdapter = () => {
         const data = part.replace("data: ", "").trim();
 
         if (data === "[DONE]") return;
-        console.log(data);
+        console.log("data", JSON.parse(data));
         yield {
           content: [{
-            type: "text",
+            type: "text-delta" as any,
             text: JSON.parse(data).textDelta ?? "hello",
             
-          }
-        ],
+          } as any,
+        ]
         } as ChatModelRunResult;
       }
     }
@@ -299,9 +300,16 @@ export function MyRuntimeProvider({
 
 
   const runtime = useRemoteThreadListRuntime({
-    runtimeHook: () => useLocalRuntime(useLocalStreamingAdapter()),
+    runtimeHook: () => useDataStreamRuntime({
+      api: 'http://localhost:8000/chat-stream',
+    }),
     adapter: useLocalThreadAdapter()
   })
+
+  //   const runtime = useRemoteThreadListRuntime({
+  //   runtimeHook: () => useLocalRuntime(useLocalModelAdapter()),
+  //   adapter: useLocalThreadAdapter()
+  // })
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

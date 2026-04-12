@@ -36,6 +36,7 @@ import {
   ThumbsUp,
 } from "lucide-react";
 import type { FC } from "react";
+import { Reasoning } from "./reasoning";
 
 export const Thread: FC = () => {
   return (
@@ -215,14 +216,12 @@ const AssistantMessage: FC = () => {
             if (part.type === "text") return <MarkdownText />;
             if (part.type === "tool-call")
               return part.toolUI ?? <ToolFallback {...part} />;
-
-            if (part.type === "reasoning") return <MarkdownText />;
+            if (part.type === "reasoning") return <Reasoning {...part} />;
             return null;
           }}
         </MessagePrimitive.Parts>
         <MessageError />
       </div>
-
       <div className="aui-assistant-message-footer mt-1 ml-2 flex min-h-6 items-center">
         <BranchPicker />
         <AssistantActionBar />
