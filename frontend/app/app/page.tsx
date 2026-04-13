@@ -18,7 +18,8 @@ function ThreadWithSuggestions() {
         label: "to generate multiple messages",
         prompt: "Tell me a short story about a robot learning to paint.",
       },
-    ]),
+      
+    ])
   });
   return (
     <AuiProvider value={aui}>

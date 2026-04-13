@@ -12,6 +12,7 @@ import dspy
 import os
 
 from fastapi.responses import StreamingResponse
+from litellm import ModelResponseStream
 from pydantic import BaseModel
 
 from tools.send_message import get_chat_groups, send_message
@@ -22,8 +23,10 @@ dspy.configure(
     lm=dspy.LM(
         os.getenv("MODEL_NAME"), 
         api_key=os.getenv("OPEN_API_KEY"), 
-        api_base=os.getenv("OPEN_API_URL")
-    )
+        api_base=os.getenv("OPEN_API_URL"),
+        cache=False
+    ),
+    
 )
 
 app = FastAPI()
@@ -74,7 +77,15 @@ class ThreadTitleSignature(dspy.Signature):
     message: list[dict] = dspy.InputField()
     title: str = dspy.OutputField()
 
-chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses, search_web, send_message, get_chat_groups])
+class Agent(dspy.Module):
+    def __init__(self):
+        self.chat_model = dspy.ReAct(ChatWithHistory, tools=[get_courses,get_people_in_courses, search_web, send_message, get_chat_groups])
+        
+    async def aforward(self, history, question)->dspy.Prediction:
+        result = await self.chat_model.aforward(history=history, question=question)
+        
+        return result
+
 
 class ChatRequest(BaseModel):
     #internal_id: str
@@ -150,14 +161,16 @@ def generate_title(req: TitleRequest)-> TitleResponse:
     thread_db[id]["title"]= result.get("title")
     return TitleResponse(title=result.get("title"))
 
+chat_model = Agent()
 
 dspy_streamer = dspy.streamify(
     chat_model,
     stream_listeners=[
-        StreamListener(signature_field_name="answer"),
+        StreamListener(signature_field_name="answer", predict=chat_model.chat_model.extract.predict, predict_name="answer"),
         StreamListener(signature_field_name="reasoning"),
-        
+        StreamListener(signature_field_name="next_thought", allow_reuse=True),
     ],
+    is_async_program=True,
     async_streaming=True,
 )
 
@@ -174,6 +187,8 @@ async def streaming_response(streamer):
     is_text = False
     
     async for value in streamer:
+        if isinstance(value, ModelResponseStream):
+            logging.error(value)
         if isinstance(value, StatusMessage):
             data = {"status": value.message}
             # UIMessageStream.ts
@@ -215,21 +230,15 @@ async def streaming_response(streamer):
             logging.error(value["answer"])
             
             #yield f"data: {{ \"type\": \"part-start\", \"textDelta\": \"\\n\\n\"}}\n\n"
-            yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": {json.dumps(value["answer"])}}}\n\n"
+            #yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": {json.dumps(value["answer"])}}}\n\n"
         elif isinstance(value, litellm.ModelResponseStream):
             #data = {"chunk": value.json()}
             yield f"data: {{ \"type\": \"reasoning\", \"textDelta\": \"hello world\"}}\n\n"
         elif isinstance(value, StreamResponse):
-            if value.is_last_chunk:
-                pass
-                #yield f"data: {{ \"type\": \"text-end\"}}\n\n"        
-            elif is_text == False:
-                #yield f"data: {{ \"type\": \"text-start\"}}\n\n"
-                is_text = True
-            #data = {"chunk": {k: v for k, v in asdict(value).items()}}
-            #yield f"data: {json.dumps(data)}\n\n"
-            #yield f"data: {json.dumps(d)}\n\n"
-            yield f"data: {{ \"type\": \"reasoning-delta\", \"delta\": {json.dumps(asdict(value)["chunk"])}}}\n\n"
+            if value.signature_field_name == "reasoning":
+                yield f"data: {{ \"type\": \"reasoning-delta\", \"delta\": {json.dumps(asdict(value)["chunk"])}}}\n\n"
+            elif value.signature_field_name == "answer":
+                yield f"data: {{ \"type\": \"text-delta\", \"textDelta\": {json.dumps(asdict(value)["chunk"])}}}\n\n"
             #yield f"data: {json.dumps(d2)}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
             yield value

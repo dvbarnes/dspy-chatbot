@@ -13,6 +13,7 @@ import {
   ActionBarPrimitive,
   AuiIf,
   BranchPickerPrimitive,
+  ChainOfThoughtPrimitive,
   ComposerPrimitive,
   ErrorPrimitive,
   MessagePrimitive,
@@ -24,6 +25,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CopyIcon,
@@ -35,7 +37,7 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
-import type { FC } from "react";
+import { useState, type FC, type PropsWithChildren } from "react";
 import { Reasoning } from "./reasoning";
 
 export const Thread: FC = () => {
@@ -204,6 +206,60 @@ const MessageError: FC = () => {
   );
 };
 
+const PartLayout: FC<PropsWithChildren> = ({ children }) => {
+  const partType = useAuiState((s) => s.part.type);
+  const [open, setOpen] = useState(true);
+
+  const label = partType === "reasoning" ? "Thinking" : "Taking action";
+
+  return (
+    <div className="border-t">
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-muted-foreground text-xs hover:bg-muted/50"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? (
+          <ChevronDownIcon className="size-3" />
+        ) : (
+          <ChevronRightIcon className="size-3" />
+        )}
+        {label}
+      </button>
+      {open && children}
+    </div>
+  );
+};
+
+const ChainOfThought: FC = () => {
+  return (
+    <ChainOfThoughtPrimitive.Root className="my-2 rounded-lg border">
+      <ChainOfThoughtPrimitive.AccordionTrigger className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 font-medium text-sm hover:bg-muted/50">
+        <AuiIf condition={(s) => s.chainOfThought.collapsed}>
+          <ChevronRightIcon className="size-4 shrink-0" />
+        </AuiIf>
+        <AuiIf condition={(s) => !s.chainOfThought.collapsed}>
+          <ChevronDownIcon className="size-4 shrink-0" />
+        </AuiIf>
+        Thinking
+      </ChainOfThoughtPrimitive.AccordionTrigger>
+      <AuiIf condition={(s) => !s.chainOfThought.collapsed}>
+        <ChainOfThoughtPrimitive.Parts>
+          {({ part }) => {
+            if (part.type === "reasoning")
+              return (
+                <PartLayout>
+                  <Reasoning {...part} />
+                </PartLayout>
+              );
+            return null;
+          }}
+        </ChainOfThoughtPrimitive.Parts>
+      </AuiIf>
+    </ChainOfThoughtPrimitive.Root>
+  );
+};
+
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -220,8 +276,10 @@ const AssistantMessage: FC = () => {
             return null;
           }}
         </MessagePrimitive.Parts>
+        
         <MessageError />
       </div>
+      
       <div className="aui-assistant-message-footer mt-1 ml-2 flex min-h-6 items-center">
         <BranchPicker />
         <AssistantActionBar />
